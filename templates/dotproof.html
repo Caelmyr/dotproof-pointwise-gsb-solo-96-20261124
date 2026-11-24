@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DotProof · 压点校样台</title>
+  <link rel="stylesheet" href="/static/dotproof.css">
+  <script src="/static/dotproof.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand"><strong>Dot<span>Proof</span></strong><span>压点校样台</span></div>
+    <nav class="actions" aria-label="压样来源">
+      <a class="quiet" href="/prepare">照片准备 ↗</a>
+      <button id="demo" type="button">打开合成压样</button>
+      <label class="button primary">导入原片<input id="upload" type="file" accept="image/png,image/jpeg,image/tiff"></label>
+    </nav>
+  </header>
+  <main>
+    <section class="bearing" aria-label="当前压样">
+      <div class="bearing-title"><h1 id="name">压点校样</h1><small id="source-detail">平面压样照片</small></div>
+      <label class="existing">已导入压样 <select id="plates" aria-label="已导入压样"><option value="">选择压样</option></select></label>
+    </section>
+    <p id="message" role="status" aria-live="polite"></p>
+    <section id="empty" class="empty">
+      <div class="sample-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <h2>开始核对一张压样</h2>
+      <p>使用定向侧光拍摄印面，按照片标明字模起点和行方向。</p>
+      <button id="empty-demo" type="button" class="primary">打开合成压样</button>
+    </section>
+    <div id="desk" class="desk" hidden>
+      <section class="visible-board" aria-label="压样图和复核">
+        <section class="photo-panel">
+          <div class="photo-toolbar">
+            <div class="actions"><button id="photo-view" aria-pressed="false" type="button">原片</button><button id="grid-view" aria-pressed="true" type="button">点阵</button></div>
+            <span id="view-state">现行版位</span>
+            <a id="raw" class="quiet" download>原片 PNG ↓</a>
+          </div>
+          <div id="stage" class="stage"><canvas id="photo" aria-label="压样图，可点击格点"></canvas></div>
+          <div id="counts" class="counts"></div>
+        </section>
+        <section class="panel review-panel" aria-label="点位复核">
+          <h2>点位复核</h2>
+          <label id="dot-choice">抽看格点 <select id="dots"><option value="">从照片点击或选择异常格点</option></select></label>
+          <p id="dot-detail" class="hint">点选照片上一个格点，查看判读及原片坐标。</p>
+          <div id="review-form" hidden>
+            <div class="review-box">
+              <label>复核结论<select id="decision"><option value="confirmed">已确认</option><option value="check">待复核</option><option value="waived">工艺允许</option></select></label>
+              <label>备注<input id="note" maxlength="100" placeholder="例如：清洁后复看"></label>
+              <label>原片证据<span id="sample-info" class="coordinate"></span></label>
+              <button type="button" id="mark-sample">选原片证据位置</button>
+            </div>
+            <div class="actions"><button id="save-review" class="primary" type="button">保存点位复核</button><button id="remove-review" type="button">删除复核</button></div>
+          </div>
+        </section>
+      </section>
+      <aside>
+        <section class="panel layout-panel">
+          <h2>点阵版位</h2>
+          <form id="layout">
+            <div class="endpoint"><button id="mark-origin" type="button">选字模起点</button><output id="origin-text">未选择</output></div>
+            <div class="endpoint"><button id="mark-axis" type="button">选行方向点</button><output id="axis-text">未选择</output></div>
+            <div class="fields">
+              <label>基线距离 mm<input id="axis_mm" type="number" min=".1" max="1000" step="any" required></label>
+              <label>点距 mm<input id="dot_pitch" type="number" min=".5" max="20" step="any" required></label>
+              <label>格距 mm<input id="cell_step" type="number" min="1" max="50" step="any" required></label>
+              <label>行距 mm<input id="line_step" type="number" min="1" max="100" step="any" required></label>
+              <label>取样半径 mm<input id="radius" type="number" min=".15" max="8" step="any" required></label>
+              <label>最低明暗差<input id="threshold" type="number" min=".1" max="255" step="any" required></label>
+            </div>
+            <label>六点字模<textarea id="pattern" rows="4" spellcheck="false" required></textarea></label>
+            <p class="hint">每格写压点数字，中间用空格。空格位写 – 对应的半角符号 <code>-</code>。</p>
+            <div class="actions"><button id="preview" type="button">预览读数</button><button class="primary" type="submit">应用版位</button></div>
+          </form>
+        </section>
+        <section class="panel archive-panel">
+          <h2>压样留档</h2>
+          <form id="archive" class="inline">
+            <input aria-label="复核单名称" id="report-title" maxlength="100" placeholder="复核单名称">
+            <button type="submit">封存复核单</button>
+          </form>
+          <label class="archive-select">历史留样<select id="reports"><option value="">选择复核单</option></select></label>
+          <div class="actions" id="downloads" hidden>
+            <a download id="download-png">标记 PNG ↓</a><a download id="download-csv">点位 CSV ↓</a>
+            <button id="return-current" type="button">返回现行版位</button>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
