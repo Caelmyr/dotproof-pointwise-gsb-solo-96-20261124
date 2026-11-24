@@ -8,7 +8,8 @@ const colors = {match: "#dfecdc", missing: "#ed655d", extra: "#eabb53", unseen: 
 const geometry = ["origin", "axis", "axis_mm", "dot_pitch", "cell_step", "line_step", "pattern"];
 const format = xy => xy ? xy.map(value => Number(value.toFixed(1))).join(", ") + " px" : "未选择";
 const s = {plate: null, bitmap: null, endpoints: {}, result: null, archive: null, mode: "grid",
-  pending: null, selected: "", sample: null, preview: false, requestId: 0};
+  pending: null, selected: "", evidenceKey: "", sample: null, preview: false, requestId: 0,
+  carried: {}, loose: []};
 
 async function api(path, method = "GET", data) {
   const options = {method};
@@ -90,6 +91,18 @@ function evidenceMarker(context, xy) {
   context.stroke();
 }
 
+function looseMarker(context, xy, active) {
+  context.lineWidth = active ? 2.4 : 1.6;
+  context.strokeStyle = "#eabb53";
+  const [x, y] = xy;
+  context.beginPath();
+  context.moveTo(x - 7, y - 7);
+  context.lineTo(x + 7, y + 7);
+  context.moveTo(x + 7, y - 7);
+  context.lineTo(x - 7, y + 7);
+  context.stroke();
+}
+
 function draw() {
   const canvas = el("photo");
   if (!s.bitmap) return;
@@ -100,6 +113,7 @@ function draw() {
   const context = canvas.getContext("2d");
   context.drawImage(s.bitmap, 0, 0);
   const reviews = s.archive?.reviews ?? s.plate.reviews;
+  const carried = s.preview ? s.carried : null;
   if (s.mode === "grid") {
     for (const dot of s.result?.dots ?? []) {
       const [x, y] = dot.xy;
@@ -111,8 +125,14 @@ function draw() {
       if (!s.preview && reviews[dot.id]) {
         context.fillStyle = "#58edcd";
         context.fillRect(x + 8, y - 12, 4, 4);
+      } else if (carried?.[dot.id]) {
+        context.fillStyle = "#58edcd";
+        context.fillRect(x + 8, y - 12, 4, 4);
       }
     }
+  }
+  for (const item of s.loose) {
+    if (Array.isArray(item.sample)) looseMarker(context, item.sample, item.id === s.evidenceKey);
   }
   for (const xy of Object.values(s.archive?.layout ?? s.endpoints).slice(0, 2)) {
     if (Array.isArray(xy) && !s.archive) evidenceMarker(context, xy);
@@ -127,23 +147,43 @@ function activeDot() {
 function refreshReview() {
   const dot = activeDot();
   const review = (s.archive?.reviews ?? s.plate.reviews)[s.selected];
+  const loose = s.loose.find(item => item.id === s.evidenceKey);
   el("review-form").hidden = !dot || dot.status === "unseen" || s.archive !== null || s.preview;
-  el("remove-review").disabled = !review;
+  el("remove-review").disabled = !review || s.preview || !!s.archive;
+  const carried = s.preview ? s.carried[s.selected] : null;
+  const continued = !s.preview && review?.from && review.from !== dot?.id ? review : null;
   el("dot-detail").textContent = dot ?
     ("第 " + dot.row + " 行 / 第 " + dot.cell + " 格 / " + dot.dot + " 号点 · " + names[dot.status] + " · " +
     format(dot.xy) + (dot.contrast === null ? "" : " · 明暗差 " + dot.contrast) +
+    (carried ? " · 预览接续 " + carried.action + (carried.note ? "（" + carried.note + "）" : "") +
+      " · 证据距 " + carried.shift_px + " px" : "") +
+    (continued ? " · 接续自 " + continued.from + " · 结论 " + continued.action +
+      (continued.note ? "（" + continued.note + "）" : "") + " · 证据距 " + continued.shift_px + " px" : "") +
     (s.archive && review ? " · 已留档复核 " + review.action + (review.note ? "（" + review.note + "）" : "") : ""))
+    : loose ? ("未接续的原片证据 · 原格点 " + loose.from + " · " + format(loose.sample) +
+      " · " + (loose.reason === "contested" ? "与其他证据争抢同一格点，保留为待归位复核" : "取样半径内没有可用格点") +
+      (loose.note ? " · " + loose.action + "（" + loose.note + "）" : ""))
     : "点选照片上一个格点，查看判读及原片坐标。";
   el("decision").value = review?.action ?? "confirmed";
   el("note").value = review?.note ?? "";
-  s.sample = review?.sample ?? (dot?.status === "unseen" ? null : dot?.xy ?? null);
+  s.sample = loose?.sample ?? review?.sample ?? (dot?.status === "unseen" ? null : dot?.xy ?? null);
   el("sample-info").textContent = format(s.sample);
+}
+
+function showLoose() {
+  el("evidence-choice").hidden = s.loose.length === 0;
+  options(el("evidence"), "选择未接续的原片证据",
+    s.loose.map(item => ({label: item.from + " · " + (item.reason === "contested" ? "争抢格点" : "无可用格点"),
+      value: item.id})));
+  el("evidence").value = s.evidenceKey;
+  el("evidence").disabled = !!s.archive;
 }
 
 function showResult(result, preview = false) {
   s.result = result;
   s.preview = preview;
   s.selected = "";
+  s.evidenceKey = "";
   el("view-state").textContent = s.archive ? "留样 · " + s.archive.title : preview ? "预览 · 待应用" : "现行版位";
   const odd = result?.dots.filter(dot => dot.status !== "match") ?? [];
   options(el("dots"), "从照片点击或选择异常格点", odd.map(dot =>
@@ -157,13 +197,25 @@ function showResult(result, preview = false) {
   el("downloads").hidden = !s.archive;
   el("layout").querySelectorAll("input,textarea,button").forEach(control => { control.disabled = !!s.archive; });
   el("archive").querySelectorAll("input,button").forEach(control => { control.disabled = !result || preview || !!s.archive; });
+  showLoose();
   refreshReview();
   draw();
+}
+
+function carryNote(result) {
+  const carried = Object.keys(result.carried ?? {}).length;
+  const loose = (result.loose ?? []).length;
+  return (carried || loose) ? "接续 " + carried + " 条，未接续 " + loose + " 条。" : "没有可接续的点位复核。";
 }
 
 async function inspect(layout) {
   if (!layout.origin || !layout.axis) return null;
   return api(path("/inspect"), "POST", {layout});
+}
+
+async function preview(layout) {
+  if (!layout.origin || !layout.axis) return null;
+  return api(path("/preview"), "POST", {layout});
 }
 
 async function openPlate(record) {
@@ -177,6 +229,8 @@ async function openPlate(record) {
   s.bitmap = image;
   s.archive = null;
   s.pending = null;
+  s.loose = record.loose_reviews ?? [];
+  s.carried = {};
   el("name").textContent = record.title;
   el("source-detail").textContent = (record.synthetic ? "合成练习样片" : "导入样片") + " · " + image.width + " × " + image.height + " px";
   el("raw").href = src + "?download";
@@ -189,7 +243,9 @@ async function openPlate(record) {
   showResult(result);
   history.replaceState(null, "", "/?plate=" + record.id);
   await Promise.all([list(), archives()]);
-  message(result ? "已打开压样。" : "请标定两点并填写字模。");
+  const pending = s.loose.length;
+  message(result ? "已打开压样。" + (pending ? "有 " + pending + " 条未接续原片证据待归位。" : "")
+    : "请标定两点并填写字模。");
 }
 
 async function loadSample() {
@@ -198,6 +254,7 @@ async function loadSample() {
 
 function selectDot(dot) {
   if (!dot) return;
+  s.evidenceKey = "";
   s.selected = dot.id;
   if (![...el("dots").options].some(option => option.value === dot.id)) {
     el("dots").add(new Option(dot.id + " · " + names[dot.status], dot.id));
@@ -242,9 +299,23 @@ el("photo").onclick = event => {
     updateEndpointLabels();
     message("已记下端点，可预览或应用版位。");
   } else {
-    const clicked = (s.result?.dots ?? []).map(dot => [Math.hypot(dot.xy[0] - xy[0], dot.xy[1] - xy[1]), dot])
-      .reduce((best, item) => item[0] < best[0] ? item : best, [18, null])[1];
-    selectDot(clicked);
+    const nearest = (items, point) => items
+      .map(item => [Math.hypot(item.xy[0] - point[0], item.xy[1] - point[1]), item])
+      .reduce((best, entry) => entry[0] < best[0] ? entry : best, [18, null])[1];
+    const clicked = nearest(s.result?.dots ?? [], xy);
+    const loose = nearest(
+      s.loose.filter(item => Array.isArray(item.sample)).map(item => ({xy: item.sample, item})), xy);
+    if (clicked) {
+      selectDot(clicked);
+    } else if (loose) {
+      s.evidenceKey = loose.item.id;
+      el("evidence").value = s.evidenceKey;
+      s.selected = "";
+      el("dots").value = "";
+      refreshReview();
+    } else {
+      selectDot(null);
+    }
   }
   s.pending = null;
   draw();
@@ -257,25 +328,39 @@ for (const mode of ["photo", "grid"]) {
     draw();
   };
 }
-el("dots").onchange = () => selectDot(s.result?.dots.find(dot => dot.id === el("dots").value));
+el("dots").onchange = () => {
+  s.evidenceKey = "";
+  selectDot(s.result?.dots.find(dot => dot.id === el("dots").value));
+};
+el("evidence").onchange = () => {
+  s.evidenceKey = el("evidence").value;
+  s.selected = "";
+  el("dots").value = "";
+  refreshReview();
+  draw();
+};
 el("preview").onclick = act(async () => {
   if (!el("layout").reportValidity()) return;
   const layout = currentLayout();
-  const result = await inspect(layout);
+  const result = await preview(layout);
   if (!result) throw new Error("先在原片标出起点和方向点。");
-  showResult(result, true);
-  message("预览读数。确认后应用版位。");
+  s.carried = result.carried;
+  s.loose = result.loose;
+  showResult(result.proof, true);
+  message("预览读数。" + carryNote(result) + "确认后应用版位。");
 });
 el("layout").onsubmit = act(async () => {
   const layout = currentLayout();
   const changed = geometry.some(key => JSON.stringify(layout[key]) !== JSON.stringify(s.plate.layout[key]));
-  const hasReviews = Object.keys(s.plate.reviews).length > 0;
+  const hasReviews = Object.keys(s.plate.reviews).length > 0 || s.loose.length > 0;
   if (!layout.origin || !layout.axis) throw new Error("先在原片标出起点和方向点。");
-  if (changed && hasReviews && !confirm("应用新版位将清空现行点位复核，已封存的复核单仍可重开。继续？")) return;
-  s.plate = await api(path("/layout"), "PUT", {layout, revision: s.plate.revision, reset_reviews: changed && hasReviews});
+  if (changed && hasReviews && !confirm("应用新版位会先按原片证据位置接续现行复核，接不上的仍留在现行复核里。继续？")) return;
+  s.plate = await api(path("/layout"), "PUT", {layout, revision: s.plate.revision, carry_reviews: changed && hasReviews});
+  s.carried = {};
+  s.loose = s.plate.loose_reviews ?? [];
   fillLayout();
   showResult(await inspect(s.plate.layout));
-  message("已应用版位。");
+  message("已应用版位。" + carryNote({carried: s.plate.reviews, loose: s.loose}));
 });
 
 async function writeReview(action) {
@@ -299,6 +384,8 @@ el("archive").onsubmit = act(async () => {
 async function openArchive(record) {
   s.archive = record;
   s.pending = null;
+  s.carried = {};
+  s.loose = record.loose_reviews ?? [];
   showResult(record.results);
   const base = root + path("/reports/" + record.id);
   el("download-png").href = base + "/overlay.png?download";

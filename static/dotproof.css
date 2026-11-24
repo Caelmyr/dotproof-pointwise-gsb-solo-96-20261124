@@ -69,7 +69,7 @@ canvas { display: block; max-width: 100%; max-height: 64vh; object-fit: contain;
 .existing, .inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #plates { max-width: 245px; }
 .layout-panel form, #review-form { display: grid; gap: 11px; }
-.layout-panel label, .review-box label, .archive-select, #dot-choice { display: grid; gap: 4px; color: var(--muted); min-width: 0; }
+.layout-panel label, .review-box label, .archive-select, #dot-choice, #evidence-choice { display: grid; gap: 4px; color: var(--muted); min-width: 0; }
 input, textarea, select { min-width: 0; }
 textarea { width: 100%; resize: vertical; font-family: ui-monospace, monospace; }
 .endpoint { display: flex; align-items: center; gap: 10px; }
@@ -77,6 +77,8 @@ output, .coordinate { color: var(--mint); font-family: ui-monospace, monospace; 
 .fields, .review-box { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 #dot-detail { margin: 8px 0; }
 #dot-choice select { max-width: 490px; }
+#evidence-choice { margin-top: 4px; }
+#evidence-choice select { max-width: 490px; }
 .inline { flex-wrap: nowrap; }
 .inline input { flex: 1; }
 .archive-select { margin-top: 12px; margin-bottom: 10px; }

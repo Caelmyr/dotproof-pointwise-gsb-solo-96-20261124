@@ -82,11 +82,17 @@ def create_app(root):
         layout = state.validate_layout(record, body().get("layout", {}))
         return jsonify(state.measured(library.image(plate), layout))
 
+    @desk.post("/plates/<plate>/preview")
+    def preview(plate):
+        record = library.record(plate)
+        layout = state.validate_layout(record, body().get("layout", {}))
+        return jsonify(state.preview(library.image(plate), record, layout))
+
     @desk.put("/plates/<plate>/layout")
     def save_layout(plate):
         payload = body()
         return jsonify(library.update(plate, payload.get("revision"), payload.get("layout"),
-                                      payload.get("reset_reviews")))
+                                      payload.get("carry_reviews")))
 
     @desk.put("/plates/<plate>/review")
     def annotate(plate):
@@ -110,7 +116,8 @@ def create_app(root):
     @desk.get("/plates/<plate>/reports/<report_id>/overlay.png")
     def overlay(plate, report_id):
         report = library.report(plate, report_id)
-        render = grid.overlay(library.image(plate), report["results"], report["reviews"])
+        render = grid.overlay(library.image(plate), report["results"], report["reviews"],
+                              report.get("loose_reviews", []))
         return png_file(BytesIO(photos.png(render)), "proof-overlay.png")
 
     @desk.get("/plates/<plate>/reports/<report_id>/dots.csv")
@@ -128,6 +135,13 @@ def create_app(root):
             writer.writerow([dot["id"], dot["row"], dot["cell"], dot["dot"], *dot["xy"], dot["contrast"],
                              dot["expected"], dot["status"], review.get("action", ""),
                              *review.get("sample", ["", ""]), note])
+        for item in report.get("loose_reviews", []):
+            note = item.get("note", "")
+            if note.lstrip().startswith(("=", "+", "-", "@")):
+                note = "'" + note
+            writer.writerow([item["id"], "", "", "", "", "", "", "", "unplaced",
+                             item.get("action", ""), *item.get("sample", ["", ""]),
+                             note or "原格点 " + str(item.get("from", ""))])
         return send_file(BytesIO(output.getvalue().encode("utf-8-sig")), mimetype="text/csv",
                          download_name="proof-dots.csv", as_attachment=True, max_age=0)
 

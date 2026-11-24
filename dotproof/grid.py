@@ -82,7 +82,7 @@ def analyze(image, layout):
     return {"dots": dots, "totals": totals, "px_per_mm": round(px_per_mm, 6)}
 
 
-def overlay(image, report, reviews):
+def overlay(image, report, reviews, loose=()):
     board = image.convert("RGBA")
     layer = Image.new("RGBA", image.size)
     draw = ImageDraw.Draw(layer)
@@ -96,5 +96,12 @@ def overlay(image, report, reviews):
                      outline=color, width=2 if radius == 8 else 1)
         if dot["id"] in reviews:
             draw.rectangle((x + 8, y - 12, x + 13, y - 7), fill=(62, 191, 178, 255))
+    for item in loose:
+        xy = item.get("sample")
+        if not isinstance(xy, list) or len(xy) != 2:
+            continue
+        x, y = xy
+        draw.line((x - 7, y - 7, x + 7, y + 7), fill=(246, 187, 79, 255), width=2)
+        draw.line((x + 7, y - 7, x - 7, y + 7), fill=(246, 187, 79, 255), width=2)
     board.alpha_composite(layer)
     return board.convert("RGB")
