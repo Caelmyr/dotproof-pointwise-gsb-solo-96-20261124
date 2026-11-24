@@ -94,7 +94,18 @@ def overlay(image, report, reviews):
         radius = 8 if dot["expected"] or dot["found"] else 3
         draw.ellipse((x - radius, y - radius, x + radius, y + radius),
                      outline=color, width=2 if radius == 8 else 1)
-        if dot["id"] in reviews:
+        review = reviews.get(dot["id"])
+        if review:
             draw.rectangle((x + 8, y - 12, x + 13, y - 7), fill=(62, 191, 178, 255))
+            repair = review.get("repair")
+            if repair:
+                # The adopted repair head stays findable by its circle alone.
+                cx, cy = repair["center"]
+                rr = repair["radius_px"]
+                draw.ellipse((cx - rr, cy - rr, cx + rr, cy + rr),
+                             outline=(62, 191, 178, 255), width=2)
+                draw.line((cx - rr - 4, cy, cx + rr + 4, cy), fill=(62, 191, 178, 255), width=1)
+                draw.line((cx, cy - rr - 4, cx, cy + rr + 4), fill=(62, 191, 178, 255), width=1)
+                draw.line((x, y, cx, cy), fill=(62, 191, 178, 150), width=1)
     board.alpha_composite(layer)
     return board.convert("RGB")

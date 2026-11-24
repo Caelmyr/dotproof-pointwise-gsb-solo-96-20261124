@@ -14,7 +14,7 @@ from werkzeug.exceptions import NotFound
 
 from image_lab.validation import Conflict, Invalid
 
-from . import grid, photos
+from . import grid, photos, placement
 
 KEY = re.compile(r"[0-9a-f]{16}")
 DEFAULT_LAYOUT = {
@@ -106,6 +106,12 @@ def measured(image, layout):
     return grid.analyze(image, layout)
 
 
+def repair_centres(record, dot_id=None):
+    """Centres of heads adopted on other dots, kept out of a new search."""
+    return [entry["repair"]["center"] for key, entry in record["reviews"].items()
+            if key != dot_id and isinstance(entry.get("repair"), dict)]
+
+
 class Library:
     def __init__(self, root):
         self.plates = root / "proof-plates"
@@ -166,11 +172,26 @@ class Library:
             write_json(self.folder(plate) / "proof.json", record)
             return record
 
-    def annotate(self, plate, revision, dot_id, action, note, sample=None):
+    def plan_repair(self, plate, dot_id):
+        record = self.record(plate)
+        image = self.image(plate)
+        proof = measured(image, record["layout"])
+        dot = next((item for item in proof["dots"] if item["id"] == dot_id), None)
+        if dot is None or dot["status"] == "unseen":
+            raise Invalid("请选择已在原片取样的格点。")
+        if not dot["expected"] or dot["status"] != "missing":
+            raise Invalid("只有字模要求、原片确实漏压的点才安排补压头。")
+        plan = placement.find(image, record["layout"], dot["xy"], repair_centres(record, dot_id=dot_id))
+        if "repair" in record["reviews"].get(dot_id, {}):
+            plan = {**plan, "adopted": record["reviews"][dot_id]["repair"]}
+        return {**plan, "dot_id": dot["id"], "row": dot["row"], "cell": dot["cell"], "dot": dot["dot"]}
+
+    def annotate(self, plate, revision, dot_id, action, note, sample=None, repair=False):
         with self.lock:
             record = self.record(plate)
             check_revision(record, revision)
-            proof = measured(self.image(plate), record["layout"])
+            image = self.image(plate)
+            proof = measured(image, record["layout"])
             dot = next((item for item in proof["dots"] if item["id"] == dot_id), None)
             if dot is None or dot["status"] == "unseen":
                 raise Invalid("请选择已在原片取样的格点。")
@@ -179,9 +200,27 @@ class Library:
             else:
                 if not isinstance(action, str) or action not in grid.ACTIONS:
                     raise Invalid("请选择已确认、待复核或允许。")
+                if repair is not None and not isinstance(repair, bool):
+                    raise Invalid("补压位参数不正确。")
+                previous = record["reviews"].get(dot_id, {})
                 sample = coordinate(sample, record) if sample is not None else dot["xy"]
-                record["reviews"][dot_id] = {"action": action, "note": title(note, ""),
-                                             "sample": sample, "created": now()}
+                entry = {"action": action, "note": title(note, ""), "sample": sample, "created": now()}
+                # The head is fixed once adopted: later evidence picks or note
+                # edits keep the circle where the operator last accepted it.
+                if "repair" in previous:
+                    entry["repair"] = previous["repair"]
+                elif repair:
+                    if not dot["expected"] or dot["status"] != "missing":
+                        raise Invalid("只有字模要求、原片确实漏压的点才安排补压头。")
+                    plan = placement.find(image, record["layout"], dot["xy"],
+                                          repair_centres(record, dot_id=dot_id))
+                    if not plan["available"]:
+                        raise Invalid(plan.get("reason", "没有可用的补压头位置。"))
+                    entry["repair"] = {"center": plan["center"], "mold": plan["mold"],
+                                       "radius_px": plan["radius_px"], "radius_mm": plan["radius_mm"],
+                                       "clearance_px": plan["clearance_px"], "offset_px": plan["offset_px"],
+                                       "state": "adopted", "created": now()}
+                record["reviews"][dot_id] = entry
             record["revision"] += 1
             write_json(self.folder(plate) / "proof.json", record)
             return record

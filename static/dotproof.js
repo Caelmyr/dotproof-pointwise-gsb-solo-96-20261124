@@ -8,7 +8,7 @@ const colors = {match: "#dfecdc", missing: "#ed655d", extra: "#eabb53", unseen: 
 const geometry = ["origin", "axis", "axis_mm", "dot_pitch", "cell_step", "line_step", "pattern"];
 const format = xy => xy ? xy.map(value => Number(value.toFixed(1))).join(", ") + " px" : "未选择";
 const s = {plate: null, bitmap: null, endpoints: {}, result: null, archive: null, mode: "grid",
-  pending: null, selected: "", sample: null, preview: false, requestId: 0};
+  pending: null, selected: "", sample: null, preview: false, requestId: 0, plan: null};
 
 async function api(path, method = "GET", data) {
   const options = {method};
@@ -90,6 +90,25 @@ function evidenceMarker(context, xy) {
   context.stroke();
 }
 
+function repairCircle(context, xy, radius) {
+  const [x, y] = xy;
+  context.save();
+  context.setLineDash([5, 3]);
+  context.lineWidth = 1.6;
+  context.strokeStyle = "#58edcd";
+  context.beginPath();
+  context.arc(x, y, radius, 0, Math.PI * 2);
+  context.stroke();
+  context.setLineDash([]);
+  context.beginPath();
+  context.moveTo(x - 5, y);
+  context.lineTo(x + 5, y);
+  context.moveTo(x, y - 5);
+  context.lineTo(x, y + 5);
+  context.stroke();
+  context.restore();
+}
+
 function draw() {
   const canvas = el("photo");
   if (!s.bitmap) return;
@@ -97,6 +116,7 @@ function draw() {
     canvas.width = s.bitmap.naturalWidth;
     canvas.height = s.bitmap.naturalHeight;
   }
+  if (el("repair-box").hidden) s.plan = null;
   const context = canvas.getContext("2d");
   context.drawImage(s.bitmap, 0, 0);
   const reviews = s.archive?.reviews ?? s.plate.reviews;
@@ -112,8 +132,11 @@ function draw() {
         context.fillStyle = "#58edcd";
         context.fillRect(x + 8, y - 12, 4, 4);
       }
+      const repair = reviews[dot.id]?.repair;
+      if (repair) repairCircle(context, repair.center, repair.radius_px);
     }
   }
+  if (s.plan?.available) repairCircle(context, s.plan.center, s.plan.radius_px);
   for (const xy of Object.values(s.archive?.layout ?? s.endpoints).slice(0, 2)) {
     if (Array.isArray(xy) && !s.archive) evidenceMarker(context, xy);
   }
@@ -122,6 +145,39 @@ function draw() {
 
 function activeDot() {
   return s.result?.dots.find(dot => dot.id === s.selected);
+}
+
+function refreshRepair() {
+  const dot = activeDot();
+  const review = (s.archive?.reviews ?? s.plate.reviews)[s.selected];
+  const eligible = !!dot && dot.status === "missing" && !s.preview && !s.archive;
+  el("repair-box").hidden = !eligible;
+  if (!eligible) {
+    s.plan = null;
+    return;
+  }
+  const adopted = review?.repair;
+  if (s.plan && s.plan.dot_id !== dot.id) s.plan = null;
+  el("repair-find").hidden = !!adopted;
+  el("repair-find").textContent = s.plan ? "重新找圆心" : "找补压头圆心";
+  el("repair-adopt").hidden = !s.plan?.available;
+  if (adopted) {
+    el("repair-state").textContent = "已采用";
+    el("repair-detail").textContent = "圆心 " + format(adopted.center) + "，半径 " +
+      Number(adopted.radius_px).toFixed(1) + " px。改备注或重选原片证据都会留在这里。";
+  } else if (s.plan && !s.plan.available) {
+    el("repair-state").textContent = "无处落头";
+    el("repair-detail").textContent = s.plan.reason;
+  } else if (s.plan) {
+    el("repair-state").textContent = "待采用";
+    el("repair-detail").textContent = "圆心 " + format(s.plan.center) + "，离字模 " +
+      s.plan.offset_px.toFixed(1) + " px，最近旧点 " + s.plan.clearance_px.toFixed(1) +
+      " px（需 " + s.plan.required_px.toFixed(1) + " px）。采用后会随复核一起留档。";
+  } else {
+    el("repair-state").textContent = "";
+    el("repair-detail").textContent = "为这个漏压点找一个能落补压头的圆心。";
+  }
+  draw();
 }
 
 function refreshReview() {
@@ -138,12 +194,14 @@ function refreshReview() {
   el("note").value = review?.note ?? "";
   s.sample = review?.sample ?? (dot?.status === "unseen" ? null : dot?.xy ?? null);
   el("sample-info").textContent = format(s.sample);
+  refreshRepair();
 }
 
-function showResult(result, preview = false) {
+async function showResult(result, preview = false) {
   s.result = result;
   s.preview = preview;
   s.selected = "";
+  s.plan = null;
   el("view-state").textContent = s.archive ? "留样 · " + s.archive.title : preview ? "预览 · 待应用" : "现行版位";
   const odd = result?.dots.filter(dot => dot.status !== "match") ?? [];
   options(el("dots"), "从照片点击或选择异常格点", odd.map(dot =>
@@ -278,16 +336,28 @@ el("layout").onsubmit = act(async () => {
   message("已应用版位。");
 });
 
-async function writeReview(action) {
+async function writeReview(action, repair = null) {
   const previous = activeDot();
   if (!previous || s.preview || s.archive) return;
   s.plate = await api(path("/review"), "PUT", {revision: s.plate.revision,
-    dot_id: s.selected, action, note: el("note").value, sample: s.sample});
+    dot_id: s.selected, action, note: el("note").value, sample: s.sample, repair});
   selectDot(previous);
   message(action === null ? "已删除点位复核。" : "已保存点位复核。");
 }
 el("save-review").onclick = act(() => writeReview(el("decision").value));
 el("remove-review").onclick = act(() => writeReview(null));
+el("repair-find").onclick = act(async () => {
+  if (!s.selected) return;
+  s.plan = await api(path("/repair"), "POST", {dot_id: s.selected});
+  refreshRepair();
+  message(s.plan.available ? "找到一处可用的补压头圆心。" : s.plan.reason, !s.plan.available);
+});
+el("repair-adopt").onclick = act(async () => {
+  if (!s.plan?.available) return;
+  s.plan = null;
+  await writeReview(el("decision").value, true);
+  message("已采用补压圆心，随点位复核一起留档。");
+});
 el("archive").onsubmit = act(async () => {
   const record = await api(path("/reports"), "POST", {revision: s.plate.revision, title: el("report-title").value});
   el("report-title").value = "";

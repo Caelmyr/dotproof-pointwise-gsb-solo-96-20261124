@@ -92,7 +92,14 @@ def create_app(root):
     def annotate(plate):
         value = body()
         return jsonify(library.annotate(plate, value.get("revision"), value.get("dot_id"), value.get("action"),
-                                        value.get("note"), value.get("sample")))
+                                        value.get("note"), value.get("sample"), value.get("repair")))
+
+    @desk.post("/plates/<plate>/repair")
+    def repair(plate):
+        value = body()
+        if not isinstance(value.get("dot_id"), str):
+            raise Invalid("请选择一个漏压格点。")
+        return jsonify(library.plan_repair(plate, value["dot_id"]))
 
     @desk.get("/plates/<plate>/reports")
     def reports(plate):
@@ -119,15 +126,18 @@ def create_app(root):
         output = StringIO(newline="")
         writer = csv.writer(output)
         writer.writerow(["slot", "row", "cell", "dot", "x_px", "y_px", "contrast", "expected", "status",
-                         "review", "review_x_px", "review_y_px", "note"])
+                         "review", "review_x_px", "review_y_px", "note", "repair_x_px", "repair_y_px",
+                         "repair_radius_px"])
         for dot in report["results"]["dots"]:
             review = report["reviews"].get(dot["id"], {})
+            repair = review.get("repair") or {}
             note = review.get("note", "")
             if note.lstrip().startswith(("=", "+", "-", "@")):
                 note = "'" + note
             writer.writerow([dot["id"], dot["row"], dot["cell"], dot["dot"], *dot["xy"], dot["contrast"],
                              dot["expected"], dot["status"], review.get("action", ""),
-                             *review.get("sample", ["", ""]), note])
+                             *review.get("sample", ["", ""]), note,
+                             *repair.get("center", ["", ""]), repair.get("radius_px", "")])
         return send_file(BytesIO(output.getvalue().encode("utf-8-sig")), mimetype="text/csv",
                          download_name="proof-dots.csv", as_attachment=True, max_age=0)
 

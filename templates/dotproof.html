@@ -50,6 +50,11 @@
               <label>原片证据<span id="sample-info" class="coordinate"></span></label>
               <button type="button" id="mark-sample">选原片证据位置</button>
             </div>
+            <div id="repair-box" class="repair-box" hidden>
+              <div class="repair-head"><span>补压头</span><span id="repair-state" class="coordinate"></span></div>
+              <p id="repair-detail" class="hint">为这个漏压点找一个能落补压头的圆心。</p>
+              <div class="actions"><button type="button" id="repair-find">找补压头圆心</button><button type="button" id="repair-adopt" class="primary" hidden>采用此圆心</button></div>
+            </div>
             <div class="actions"><button id="save-review" class="primary" type="button">保存点位复核</button><button id="remove-review" type="button">删除复核</button></div>
           </div>
         </section>

@@ -76,6 +76,11 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, monospace; 
 output, .coordinate { color: var(--mint); font-family: ui-monospace, monospace; }
 .fields, .review-box { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 #dot-detail { margin: 8px 0; }
+.repair-box { display: grid; gap: 8px; padding: 10px; border: 1px dashed var(--edge); border-radius: 6px; }
+.repair-box .hint { margin: 0; }
+.repair-head { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.repair-box .actions { gap: 6px; }
+.repair-box .actions button { flex: 1; }
 #dot-choice select { max-width: 490px; }
 .inline { flex-wrap: nowrap; }
 .inline input { flex: 1; }
